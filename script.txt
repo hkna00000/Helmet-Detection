@@ -1,0 +1,99 @@
+- Trong conv block: Slide 2
+	Chứa một lớp tích chập hai chiều: Giúp tạo ra một tensor đầu ra
+	Lớp chuẩn hóa hàng loạt 2 chiều: Dùng để cải thiện tần số học của mạng
+	Hàm kích hoạt phi tuyến SiLU (sigmoid): Giúp mạng không hoạt động tuyến tính
+- Trong c2f block: Slide 3
+	Chứa một block tích chập: Cho ra kết quả là feature map
+	Sau đó được chia ra, một phần tới bottleneck block và một phần tới concat block
+	Số bottleneck block là không giới hạn
+	Cuối cùng là một block tích chập
+- Trong bottleneck block: Slide 3
+Đây là một chuỗi các block tích chập để làm tăng độ sâu và giảm số lượng tham số. Có hai loại bottleneck block là loại được nối tắt và không nối tắt
+- Trong SPPF block (Spatial Pyramid Pooling Fast - Tổng hợp nhanh hình kim tự tháp):  Slide 4
+Giúp thay đổi kích cỡ hình ảnh từ bất kì tỉ lệ nào sao cho phù hợp với đầu vào của các lớp và nhanh hơn so với mô hình SPP thường.
+	Đầu vào sẽ là một khối tích chập
+	Theo sau đó là 3 block tổng hợp tối đa 2 chiều: Đây chính là thành phần chính giúp hình ảnh được chỉnh tỉ lệ mà vẫn giữ được các đặc trưng ban đầu
+	Kết quả đầu ra của các block tổng hợp được gom lại
+	Feature map cuối cùng đi qua một block tích chập
+- Trong Detect block: Slide 5
+Đây là nơi phụ trách nhiệm vụ phát hiện đối tượng, trong block này chứa hai tiến trình
+	Tiến trình 1: Dùng để dự đoán bounding box
+	Tiến trình 2: Dự đoán đối tượng
+Cả hai đều có chung thứ tự với 2 block tích chập ban đầu, một lớp tích chập 2 chiều
+
+_______________________________________________________________
+- Kernel (nhân): Slide 6
+Là một mảng hai chiều hay còn gọi là feature detector. Giá trị trong kernel là các trọng số có thể cập nhật trong khi huấn huyện. Kernel sẽ di chuyển trong hình ảnh và thực hiện chuyển đổi giữa input và giá trị của kernel để tạo ra output. Output ở đây sẽ là feature map
+
+- Stride (bước): Slide 7 - 8 - 9
+Là định nghĩa của khoảng cách dịch chuyển không gian trong quá trình tích chập, kết quả output càng nhỏ thì Stride càng lớn (trong slide là ví dụ của stride = 1)
+
+-Padding: Slide 10
+Là bước thêm gia trị vào rìa của hình ảnh, trong pytorch có rất nhiều loại padding (0 padding, replication padding)
+_________________________________________________________________
+
+YOLOv8 - Architecture: Slide 11
+
+- Backbone: là cấu trúc deep learning đóng vai trò feature extractor
+- Neck: Là phần kết hợp các feature nhận được từ rất nhiều lớp của mô hình trong backbone
+- Head: Dự đoán lớp của đối tượng và bounding box - kết quả cuối cùng của mô hình
+
+__________________________________________________________________
+
+Ba tham số định nghĩa các loại mô hình YOLOv8: Slide 12
+- d (depth_multiple): Định nghĩa số lượng bottleneck block bên trong c2f block
+- w (width_multiple) và mc (max_channel) định nghĩa output channel. Input của YOLOv8 là một hình ảnh với 3 channel.
+__________________________________________________________________
+BACKBONE: Slide 13 đến 19
+
+Cấu trúc backbone được tạo ra từ rất nhiều lớp tích chập để xuất các đặc điểm khác nhau ở rất nhiều mức độ phân giải
+
+
+Nói về các trọng số trong model: Các số này được dựa trên file cấu trúc của YOLOv8 với tên file là YOLOv8.yaml (https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/models/v8/yolov8.yaml). Các số này bắt đầu từ phần backbone lấy 0 làm gốc. Ví dụ, block tích chập là block đầu tiên trong cấu trúc nên ta gán nó bằng 0 và ta có thể thấy block được minh họa bên cạnh. Các trọng số này sẽ tiếp diễn cho đến block c2f cuối cùng của phần neck
+
+Phần backbone sẽ bắt đầu với hai block tích chập với size kernel(nhân) = 3, size stride (bước) = 3 và padding = 1. Độ phân giải không gian của output được giảm đi khi stride thứ hai hoạt động. 
+Ví dụ, nếu độ phân giải của input trong block tích chập đầu tiên là 640x640 thì độ phân giải đầu ra sau đó là 320x320. Để có được channel của output ta sử dụng công thức ngay dưới (công thức này nằm trong một đoạn code thuộc tasks.py của mô hình) (https://github.com/ultralytics/ultralytics/blob/main/ultralytics/nn/tasks.py - dòng 862 - 891), đầu tiên ta tìm giá trị nhỏ nhất giữa số channel output gốc và số channel tối đa sau đó nhân lên với w (width_multiple). Ở đây ta sẽ tính với w = 1 và mc = 512, số channel gốc của block tích chập đầu tiên là 64 (trong hình), đầu tiên ta sẽ tìm số nhỏ nhất giữa 64 và 512 channel sau đó nhân với 1 và kết quả là 64. Vậy đầu ra của block tích chập đầu tiên là 320x320x64. Tương tự ta có thể tính cho các block tích chập khác.
+
+Tiếp theo là c2f block, block này chứa 2 tham số: shortcut và n, shortcut trong block c2f tiếp theo có giá trị True nghĩa là tham số này sẽ được sử dụng trong các bottleneck block nằm trong block c2f này còn tham số n chỉ số lượng bottleneck block nằm bên trong, n được tính bằng cách lấy d x 3
+
+Tiếp đến là một block tích chập với size kernel(nhân) = 3, size stride (bước) = 2 và padding = 1
+
+Sau đó là một block c2f có shortcut = true và n = d x 6, block này được kết nối với phần neck 
+
+Tiếp đến là một block tích chập với size kernel(nhân) = 3, size stride (bước) = 2 và padding = 1
+
+Sau đó là một block c2f có shortcut = true và n = d x 6, block này cũng được kết nối với phần neck 
+
+Tiếp đến là một block tích chập với size kernel(nhân) = 3, size stride (bước) = 2 và padding = 1
+
+Sau đó là một block c2f có shortcut = true và n = d x 3, block này không được kết nối với phần neck nhưng được kết nối với block SPPF -  block này là được xem là block được sử dụng cuối cùng trong các lớp tích chập thược backbone. Nhiệm vụ chính của block này là tạo ra một thay thế quan trọng cố định của các đối tượng ở rất nhiều kích thước trong một ảnh hoặc biểu diễn thông tin đặc biệt bị thiếu sót
+
+_____________________________________________________________________
+
+NECK: Slide 20 đến 22
+
+Đầu tiên là một lớp Upsample: Lớp này dùng để gia tăng độ phân giải feature map của output thuộc SPPF block để phù hợp với độ phân giải của feature map thuộc output của block c2f phía trên. 
+
+Sau đó hai feature map sẽ được gộp lại trong qua block concat, khi đi qua block này thì tổng số channels sẽ được cộng lại trong khi độ phân giải vẫn giữ nguyên. Trong hình, ví dụ, khi đi qua block concat thì sẽ gộp lại 2 feature map 40x40x512 để cho ra một feature map 40x40x1024
+
+Sau đó là một block c2f có shortcut = false và n = d x 3, block này sẽ không áp dụng shortcut.
+
+Tương tự lúc trước, đầu ra của block c2f này sẽ đi qua một block upsample để có độ phân giải phù hợp với output của block c2f ở bên trên
+
+Sau đó hai feature map sẽ được gộp lại trong qua block concat để cho ra feature map tổng hợp
+
+Sau đó là một block c2f, block này sẽ giảm đi lượng channel của feature map
+
+_____________________________________________________________________
+
+HEAD: Slide 23
+
+Đầu ra của các block c2f sẽ là đầu vào cho block detect, block detect đầu tiên được sử dụng để phát hiện các đối tượng nhỏ
+
+Đầu ra của block c2f đó cũng có thể làm input cho block tích chập với size kernel(nhân) = 3, size stride (bước) = 2 và padding = 1, độ phân giải của feature map sẽ được giảm đi một nửa sau khi đi qua block này
+
+Hơn nữa, block concat có thể được sử dụng để kết hợp feature map phía trên và feature map từ block c2f bên cạnh. Sau đó là một block c2f, block này sẽ giảm kích cỡ channel của feature map, và feature map này được dùng làm input cho một block detect. Block này dùng đế phát hiện các vật thể có kích cỡ vừa
+
+Tương tự như trên, output của block c2f tiếp theo có thể làm input cho một block tích chập với size kernel(nhân) = 3, size stride (bước) = 2 và padding = 1, sau đó block concat sẽ kết hợp feature map của block tích chập và feature map của block SPPF.
+
+Cuối cùng feature map sẽ đi vào một block c2f, đầu ra của block này là một feature map làm đầu vào cho block detect và block detect này chuyên dùng để dự đoán các vật thể lớn 
